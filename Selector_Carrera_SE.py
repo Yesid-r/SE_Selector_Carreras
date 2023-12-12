@@ -1,10 +1,24 @@
-from experta import Fact, KnowledgeEngine, DefFacts, Rule, OR, NOT, MATCH, W
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from experta import *
+from pydantic import BaseModel
+
+
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Lista de carreras
 carreras_list = []
 # Características de las carreras
 carreras_char = []
 carreras_map = {}
+carrera_recomendada = ""
 
 
 def preprocess():
@@ -35,10 +49,15 @@ def identify_carrera(*arguments):
 
 
 def if_not_matched(c):
+    global carrera_recomendada
     print("")
     id_c = c
     print("")
     print("La carrera recomendada para ti es: %s\n" % (id_c))
+    print(type(id_c))
+    print("carrera: ")
+    print(id_c)
+    carrera_recomendada = id_c
 
 
 class OrientacionProfesional(KnowledgeEngine):
@@ -122,10 +141,15 @@ class OrientacionProfesional(KnowledgeEngine):
 
     @Rule(Fact(action='find_carrera'), Fact(c=MATCH.c), salience=-998)
     def c(self, c):
+        global carrera_recomendada
         print("")
         id_c = c
         print("")
         print("La carrera recomendada para ti es: %s\n" % (id_c))
+        print(type(id_c))
+        print("carrera: ")
+        print(id_c)
+        carrera_recomendada = id_c
 
     @Rule(Fact(action='find_carrera'),
           Fact(interes_minas=MATCH.interes_minas),
@@ -156,12 +180,44 @@ class OrientacionProfesional(KnowledgeEngine):
         if_not_matched(max_carrera)
 
 
+engine = OrientacionProfesional()
+class DatosRecomendacion(BaseModel):
+    interes_minas: str
+    interes_sistemas: str
+    interes_administracion: str
+    interes_industrial: str
+    interes_minas2: str
+    interes_sistemas2: str
+    interes_industrial2: str
+    interes_administracion2: str
+
+@app.post("/recomendar_carrera")
+async def recomendar_carrera(
+        datos: DatosRecomendacion
+):
+    global carrera_recomendada
+    try:
+        # Reiniciar el motor antes de ejecutar las reglas
+        engine.reset()
+
+        # Ejecutar las reglas con las respuestas proporcionadas
+        engine.declare(Fact(**datos.dict()))
+        engine.run()
+
+        # Obtener la carrera recomendada
+
+        print("--------------------carrera recomendada---------------------")
+        print(carrera_recomendada)
+
+        if carrera_recomendada:
+            return {"carrera_recomendada": carrera_recomendada}
+        else:
+            raise HTTPException(status_code=404, detail="Carrera no encontrada")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
-    preprocess()
-    engine = OrientacionProfesional()
-    while 1:
-        engine.reset()  # Prepara el motor para la ejecución.
-        engine.run()  # ¡Ejecútalo!
-        print("¿Quieres elegir otra carrera?")
-        if input() == "no":
-            exit()
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)
